@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Домой{% endblock %}
+{% block content %}
+  <div style="display: flex; align-items: flex-start;">
+    <div style="background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+      <h3 style="margin-top: 0;">Подключенные серверы</h3>
+      <div class="servers-grid" id="serversGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+        <p id="noServersMessage">Серверы не обнаружены</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Функция для отрисовки серверов на странице
+    function renderServers(servers) {
+      const serversGrid = document.getElementById("serversGrid");
+      const noServersMessage = document.getElementById("noServersMessage");
+
+      // Очищаем текущий список серверов
+      serversGrid.innerHTML = '';
+
+      if (servers.length === 0) {
+        noServersMessage.style.display = 'block';
+      } else {
+        noServersMessage.style.display = 'none';
+
+        servers.forEach(server => {
+          const serverCard = document.createElement('div');
+          serverCard.style.backgroundColor = '#f0f8ff';
+          serverCard.style.padding = '10px';
+          serverCard.style.borderRadius = '8px';
+          serverCard.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+          serverCard.style.textAlign = 'center';
+
+          serverCard.innerHTML = `
+            <strong>${server.name}</strong><br>
+            <small>${server.ip_address}</small>
+          `;
+          serversGrid.appendChild(serverCard);
+        });
+      }
+    }
+
+    // Переменная для хранения WebSocket-соединения
+    let socket;
+
+    // Функция для подключения и автоматического переподключения WebSocket
+    function connectWebSocket() {
+      socket = new WebSocket(`ws://${window.location.host}/ws/servers`);
+
+      socket.onopen = function () {
+        console.log("WebSocket соединение установлено.");
+      };
+
+      socket.onmessage = function (event) {
+        const servers = JSON.parse(event.data);
+        console.log("Обновление списка серверов:", servers);
+        renderServers(servers);
+      };
+
+      socket.onclose = function () {
+        console.log("WebSocket соединение закрыто. Попытка переподключения через 5 секунд...");
+        setTimeout(connectWebSocket, 5000);
+      };
+
+      socket.onerror = function (error) {
+        console.error("Ошибка WebSocket:", error);
+        socket.close(); // Закрываем соединение для вызова onclose и переподключения
+      };
+    }
+
+    // Инициализация подключения при загрузке страницы
+    connectWebSocket();
+  </script>
+{% endblock %}
