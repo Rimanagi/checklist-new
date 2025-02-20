@@ -1,5 +1,6 @@
 from datetime import datetime
 import random, string
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,17 +13,13 @@ class ClientServer(BaseModel):
 
 class Task(BaseModel):
     location: str | None = None
-    objects: str | None = None
-    # data = {
-    #     'location': location,
-    #     'objects': objects
-    # }
+    objects: list = list()
 
 
 class Checklist(BaseModel):
     checklist_id: str | None = None
     username: str | None = None
-    tasks: list = Field(default_factory=list[Task | None])
+    tasks: list[Optional[Task]] = list()
     one_time_password: str = Field(default_factory=lambda: ''.join(random.choices(string.digits, k=8)))
     created_at: datetime = Field(default_factory=lambda: datetime.now())
 

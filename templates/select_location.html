@@ -3,33 +3,33 @@
 {% block content %}
   <h2>Выберите локацию</h2>
   <input type="text" id="searchInput" placeholder="Поиск локации" style="width: 100%; padding: 8px; margin-bottom: 20px;">
+
   <div class="locations-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
     {% for loc in locations %}
-      <button onclick="selectLocation('{{ loc }}')"
+      <button type="button" onclick="selectLocation('{{ loc }}')"
               style="padding: 10px; background-color: #667eea; color: white; border: none; border-radius: 8px;">
         {{ loc }}
       </button>
     {% endfor %}
   </div>
+
+  <!-- Скрытая форма для отправки POST запроса -->
+  <form id="locationForm" method="post" style="display: none;">
+    <input type="hidden" name="checklist_obj" value='{{ checklist.json() | safe }}'>
+  </form>
+
   <script>
     function selectLocation(loc) {
-      const data = "{{ data | urlencode }}";
-      {% if checklist_id %}
-        const checklistIdParam = "&checklist_id={{ checklist_id }}";
-      {% else %}
-        const checklistIdParam = "";
-      {% endif %}
-      window.location.href = "/select_objects?location=" + encodeURIComponent(loc) + "&data=" + data + checklistIdParam;
+      const form = document.getElementById("locationForm");
+      form.action = "/select_location/" + encodeURIComponent(loc) + "/select_objects";
+      form.submit();
     }
+
     document.getElementById("searchInput").addEventListener("input", function(){
-      let filter = this.value.toLowerCase();
-      let buttons = document.querySelectorAll(".locations-grid button");
+      const filter = this.value.toLowerCase();
+      const buttons = document.querySelectorAll(".locations-grid button");
       buttons.forEach(btn => {
-          if(btn.innerText.toLowerCase().includes(filter)){
-              btn.style.display = "block";
-          } else {
-              btn.style.display = "none";
-          }
+          btn.style.display = btn.innerText.toLowerCase().includes(filter) ? "block" : "none";
       });
     });
   </script>

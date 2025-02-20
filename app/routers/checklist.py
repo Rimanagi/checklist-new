@@ -3,88 +3,92 @@ import string
 import urllib.parse
 import random
 from datetime import datetime
+from typing import Optional
 
-import jwt
+# import jwt
 from bson import ObjectId
-from fastapi import APIRouter, Request, Depends, Form, Body, HTTPException, status
+from fastapi import APIRouter, Request, Form, Body, HTTPException  # , status, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
+from rich.progress import TaskID
 
 from app.connected_servers import connected_servers
+from app.schemas import Checklist, Task
 from app.templates import templates
-# from app.schemas import Checklist
-# from app.services.checklist_service import create_checklist
-
 from database import locations_collection, checklists_collection, users_collection, passwords_collection
-from app.config import (SECRET_KEY, ALGORITHM, ADMIN_USERNAME)
+
+# from app.config import (SECRET_KEY, ALGORITHM, ADMIN_USERNAME)
+# from app.services.checklist_service import create_checklist
 
 router = APIRouter()
 
 
-def get_current_user_from_cookie(request: Request):
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if username is None or username != ADMIN_USERNAME:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-        return username
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+def get_context(request: Request, **kwargs):
+    context = {"request": request}
+    context.update(kwargs)
+    return context
 
 
-@router.get("/create_checklist", response_class=HTMLResponse)
+@router.api_route("/create_checklist", methods=["GET", "POST"], response_class=HTMLResponse)
 async def create_checklist_page(
         request: Request,
-        data: str = None,
-        checklist_id: str = None,
-        selected_user: str = None
+        checklist: Optional[Checklist] = Body(None)
 ):
-    checklist = []
-    if data:
-        try:
-            checklist = json.loads(urllib.parse.unquote(data))
-        except Exception:
-            checklist = []
+    if request.method == "GET":
+        checklist = Checklist()
     # Получаем список пользователей
     users = []
     cursor = users_collection.find({})
     async for user in cursor:
         user["id"] = str(user["_id"])
         users.append(user)
-    return templates.TemplateResponse("create_checklist.html", {
-        "request": request,
-        "checklist": checklist,
-        "data": data or "",
-        "checklist_id": checklist_id or "",
-        "users": users,
-        "selected_user": selected_user or ""
-    })
+
+    context = get_context(request, checklist=checklist, users=users)
+    return templates.TemplateResponse("create_checklist.html", context)
 
 
-# Страница выбора локации (с добавлением selected_user).
-@router.get("/select_location", response_class=HTMLResponse)
-async def select_location(request: Request, data: str = None, checklist_id: str = None, selected_user: str = None):
+from fastapi import Form, HTTPException
+
+
+@router.post("/select_location", response_class=HTMLResponse)
+async def select_location_page(
+        request: Request,
+        checklist_obj: Checklist = Body(...),
+):
+    try:
+        checklist = Checklist.model_validate_json(checklist_obj)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Чеклист не передался или имеет неверный формат")
+
     doc = await locations_collection.find_one({})
     if doc:
         doc.pop("_id", None)
         locations = list(doc.keys())
     else:
         locations = []
-    return templates.TemplateResponse("select_location.html", {
-        "request": request,
-        "locations": locations,
-        "data": data or "",
-        "checklist_id": checklist_id or "",
-        "selected_user": selected_user or ""
-    })
+
+    task = Task()
+    context = get_context(request, checklist=checklist, locations=locations, task=task)
+    return templates.TemplateResponse("select_location.html", context)
 
 
-# Страница выбора объектов для выбранной локации (selected_user передаётся дальше).
-@router.get("/select_objects", response_class=HTMLResponse)
-async def select_objects(request: Request, location: str, data: str = None, preselected: str = None, index: str = None,
-                         checklist_id: str = None, selected_user: str = None):
+@router.post("/select_location/{location}/select_objects", response_class=HTMLResponse)
+async def select_objects(
+    request: Request,
+    location: str,
+    checklist_obj: str = Form(...),  # Чеклист в виде JSON‑строки
+    task_obj: str = Form(...),       # Объект task в виде JSON‑строки
+):
+    # Десериализуем чеклист и task
+    try:
+        checklist = Checklist.model_validate_json(checklist_obj)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Чеклист не передался или имеет неверный формат")
+    try:
+        task = Task.model_validate_json(task_obj)
+    except Exception:
+        task = Task()
+
+    # Считываем данные о локациях из базы (JSON-файл)
     doc = await locations_collection.find_one({})
     if doc:
         doc.pop("_id", None)
@@ -93,66 +97,74 @@ async def select_objects(request: Request, location: str, data: str = None, pres
         location_data = None
     if not location_data:
         return HTMLResponse(f"Локация {location} не найдена", status_code=404)
+
+    # Получаем список объектов для выбранной локации
     objects = location_data.get("object_list", [])
-    preselected_list = []
-    if preselected:
-        try:
-            preselected_list = json.loads(preselected)
-        except Exception:
-            preselected_list = []
-    preselected_codes = [item.get("cr_code") for item in preselected_list]
-    return templates.TemplateResponse("select_objects.html", {
-        "request": request,
-        "location": location,
-        "objects": objects,
-        "data": data or "",
-        "preselected": preselected_list,
-        "preselected_codes": preselected_codes,
-        "index": index,
-        "checklist_id": checklist_id,
-        "selected_user": selected_user or ""
-    })
 
+    # Вычисляем, какие объекты уже выбраны в task (по cr_code)
+    preselected_codes = []
+    if task.objects:
+        preselected_codes = [obj.get("cr_code") for obj in task.objects if isinstance(obj, dict)]
 
-# Добавление (или обновление) локации в чеклист.
-@router.post("/add_location")
-async def add_location(
+    form = await request.form()
+    if "obj" in form:
+        # Если чекбоксы отправлены, собираем выбранные объекты
+        selected = []
+        for obj_str in form.getlist("obj"):
+            try:
+                selected.append(json.loads(obj_str))
+            except Exception:
+                pass
+        if not selected:
+            context = get_context(
+                request,
+                checklist=checklist,
+                location=location,
+                objects=objects,
+                preselected_codes=preselected_codes,
+                error="Выберите хотя бы один объект"
+            )
+            return templates.TemplateResponse("select_objects.html", context)
+        # Обновляем task: записываем локацию и выбранные объекты
+        task.location = location
+        task.objects = selected
+        # Добавляем task в checklist
+        checklist.tasks.append(task)
+        # Возвращаем страницу создания чеклиста, передавая только обновлённый checklist
+        return templates.TemplateResponse("create_checklist.html", get_context(request, checklist=checklist))
+    else:
+        # Первоначальный переход – просто отображаем страницу выбора объектов
+        context = get_context(
+            request,
+            checklist=checklist,
+            location=location,
+            objects=objects,
+            preselected_codes=preselected_codes
+        )
+        return templates.TemplateResponse("select_objects.html", context)
+
+# Страница выбора объектов для выбранной локации (selected_user передаётся дальше).
+@router.post("/select_location/{location}/select_objects", response_class=HTMLResponse)
+async def select_objects_page(
         request: Request,
-        location: str = Form(...),
-        selected_objects: str = Form(...),
-        data: str = Form("[]"),
-        index: str = Form(None),
-        checklist_id: str = Form(None),
-        selected_user: str = Form(None)
+        location: str,
+        task: str,
+        checklist: str = Form(...),  # Чеклист передается в обязательном порядке как JSON-строка
 ):
+    # Десериализуем чеклист
     try:
-        current_checklist = json.loads(data)
+        checklist = Checklist.model_validate_json(checklist)
     except Exception:
-        current_checklist = []
-    try:
-        selected_objs = json.loads(selected_objects)
-    except Exception:
-        selected_objs = []
-    new_item = {"location": location, "objects": selected_objs}
-    if index is not None:
-        try:
-            idx = int(index)
-            if 0 <= idx < len(current_checklist):
-                current_checklist[idx] = new_item
-            else:
-                current_checklist.append(new_item)
-        except ValueError:
-            current_checklist.append(new_item)
+        raise HTTPException(status_code=400, detail="Чеклист не передался или имеет неверный формат")
+
+    doc = await locations_collection.find_one({})
+    if doc:
+        doc.pop("_id", None)
+        location_data = doc.get(location)
     else:
-        current_checklist.append(new_item)
-    new_data = urllib.parse.quote(json.dumps(current_checklist))
-    if checklist_id is not None and checklist_id.strip() != "":
-        redirect_url = f"/create_checklist?data={new_data}&checklist_id={checklist_id}"
-    else:
-        redirect_url = f"/create_checklist?data={new_data}"
-    if selected_user:
-        redirect_url += f"&selected_user={selected_user}"
-    return RedirectResponse(url=redirect_url, status_code=302)
+        location_data = None
+    if not location_data:
+        return HTMLResponse(f"Локация {location} не найдена", status_code=404)
 
 
 # Удаление локации из чеклиста по индексу.
@@ -293,7 +305,7 @@ async def edit_checklist(request: Request, checklist_id: str, selected_user: str
 async def send_checklist(
         checklist: dict = Body(...),
         server_ip: str = Body(...),
-        current_user: str = Depends(get_current_user_from_cookie)
+
 ):
     target_server = None
     for s in connected_servers:
@@ -307,3 +319,16 @@ async def send_checklist(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send checklist: {str(e)}")
     return {"detail": "Checklist sent successfully"}
+
+# def get_current_user_from_cookie(request: Request):
+#     token = request.cookies.get("access_token")
+#     if not token:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+#     try:
+#         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+#         username = payload.get("sub")
+#         if username is None or username != ADMIN_USERNAME:
+#             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+#         return username
+#     except jwt.PyJWTError:
+#         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

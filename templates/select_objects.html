@@ -2,15 +2,14 @@
 {% block title %}Выбор объектов{% endblock %}
 {% block content %}
   <h2>Выберите объекты для локации: {{ location }}</h2>
-  <form id="objectsForm" method="post" action="/add_location">
-    <input type="hidden" name="location" value="{{ location }}">
-    <input type="hidden" name="data" value="{{ data }}">
-    {% if index is not none %}
-      <input type="hidden" name="index" value="{{ index }}">
-    {% endif %}
-    {% if checklist_id %}
-      <input type="hidden" name="checklist_id" value="{{ checklist_id }}">
-    {% endif %}
+  {% if error %}
+    <p style="color: red;">{{ error }}</p>
+  {% endif %}
+  <form id="objectsForm" method="post" action="/create_checklist">
+    <!-- Передаём чеклист и task -->
+    <input type="hidden" name="checklist_obj" value='{{ checklist.json() | safe }}'>
+    <input type="hidden" name="task_obj" value='{{ task.json() | safe }}'>
+    <!-- Скрытое поле для выбранных объектов, которое заполнит JS -->
     <input type="hidden" name="selected_objects" id="selectedObjects" value="[]">
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 20px;">
       {% for obj in objects %}
@@ -22,34 +21,21 @@
       {% endfor %}
     </div>
     <br>
-    <button type="button" style="padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 8px;" onclick="submitObjects()">
+    <button type="button" onclick="submitObjects()" style="padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 8px;">
       Добавить
     </button>
   </form>
-  <br>
-  {% if index is not none and data|length > 0 %}
-    {% if checklist_id %}
-      <button onclick="window.location.href='/delete_location?index={{ index }}&data={{ data | urlencode }}&checklist_id={{ checklist_id }}'" style="padding: 10px; background-color: #dc3545; color: white; border: none; border-radius: 8px;">
-        Удалить
-      </button>
-    {% else %}
-      <button onclick="window.location.href='/delete_location?index={{ index }}&data={{ data | urlencode }}'" style="padding: 10px; background-color: #dc3545; color: white; border: none; border-radius: 8px;">
-        Удалить
-      </button>
-    {% endif %}
-  {% endif %}
   <br>
   <button onclick="window.history.back()" style="padding: 10px; background-color: #6c757d; color: white; border: none; border-radius: 8px;">
     Назад
   </button>
   <script>
     function submitObjects() {
-      const checkboxes = document.querySelectorAll('input[type="checkbox"][name="obj"]:checked');
+      const checkboxes = document.querySelectorAll('input[name="obj"]:checked');
       let selected = [];
       checkboxes.forEach(cb => {
         try {
-          const obj = JSON.parse(cb.value);
-          selected.push(obj);
+          selected.push(JSON.parse(cb.value));
         } catch (e) {
           console.error(e);
         }
