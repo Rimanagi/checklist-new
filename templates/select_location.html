@@ -13,16 +13,40 @@
     {% endfor %}
   </div>
 
-  <!-- Скрытая форма для отправки POST запроса -->
-  <form id="locationForm" method="post" style="display: none;">
-    <input type="hidden" name="checklist_obj" value='{{ checklist.json() | safe }}'>
-  </form>
+  <!-- Скрытое поле с данными чеклиста -->
+  <input type="hidden" id="checklistData" value='{{ checklist.json() | safe }}'>
 
   <script>
     function selectLocation(loc) {
-      const form = document.getElementById("locationForm");
-      form.action = "/select_location/" + encodeURIComponent(loc) + "/select_objects";
-      form.submit();
+      // Получаем чеклист из скрытого поля
+      const checklist = JSON.parse(document.getElementById("checklistData").value);
+
+      // Формируем объект task с выбранной локацией
+      const task = {
+        location: loc,
+        objects: []
+      };
+
+      // Отправляем POST запрос на эндпоинт выбора объектов для выбранной локации
+      fetch(`/select_location/${encodeURIComponent(loc)}/select_objects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ task: task, checklist: checklist })
+      })
+      .then(response => {
+        if (response.ok) return response.text();
+        throw new Error("Ошибка при отправке запроса: " + response.statusText);
+      })
+      .then(html => {
+        document.open();
+        document.write(html);
+        document.close();
+      })
+      .catch(error => {
+        console.error(error);
+      });
     }
 
     document.getElementById("searchInput").addEventListener("input", function(){

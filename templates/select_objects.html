@@ -1,28 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Выбор объектов{% endblock %}
 {% block content %}
-  <h2>Выберите объекты для локации: {{ location }}</h2>
-  {% if error %}
-    <p style="color: red;">{{ error }}</p>
-  {% endif %}
-  <form id="objectsForm" method="post" action="/create_checklist">
-    <!-- Передаём чеклист и task -->
-    <input type="hidden" name="checklist_obj" value='{{ checklist.json() | safe }}'>
-    <input type="hidden" name="task_obj" value='{{ task.json() | safe }}'>
-    <!-- Скрытое поле для выбранных объектов, которое заполнит JS -->
-    <input type="hidden" name="selected_objects" id="selectedObjects" value="[]">
+  <h2>Выберите объекты для локации: {{ task.location }}</h2>
+  <form id="objectsForm">
+    <!-- Скрытые поля для передачи чеклиста и задачи -->
+    <input type="hidden" id="checklistData" value='{{ checklist.json() | safe }}'>
+    <input type="hidden" id="taskData" value='{{ task.json() | safe }}'>
+
+    {# Формируем список preselected_codes с помощью map #}
+    {% set preselected_codes = task.objects | map(attribute='cr_code') | list %}
+
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 20px;">
       {% for obj in objects %}
         <label style="display: block; background-color: #f0f8ff; padding: 10px; border-radius: 8px;">
           <input type="checkbox" name="obj" value='{{ obj | tojson | safe }}'
-                 {% if obj.cr_code in preselected_codes %}checked{% endif %}>
+            {% if obj.cr_code in preselected_codes %}checked{% endif %}>
           {{ obj.name }} ({{ obj.cr_code }})
         </label>
       {% endfor %}
     </div>
     <br>
     <button type="button" onclick="submitObjects()" style="padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 8px;">
-      Добавить
+      Сохранить изменения
     </button>
   </form>
   <br>
@@ -30,7 +29,8 @@
     Назад
   </button>
   <script>
-    function submitObjects() {
+    async function submitObjects() {
+      // Собираем выбранные объекты
       const checkboxes = document.querySelectorAll('input[name="obj"]:checked');
       let selected = [];
       checkboxes.forEach(cb => {
@@ -40,8 +40,46 @@
           console.error(e);
         }
       });
-      document.getElementById("selectedObjects").value = JSON.stringify(selected);
-      document.getElementById("objectsForm").submit();
+
+      // Если ни один объект не выбран, показываем предупреждение и не продолжаем
+      if (selected.length === 0) {
+        alert("Пожалуйста, выберите хотя бы один объект.");
+        return;
+      }
+
+      // Получаем данные задачи и чеклиста
+      let task = JSON.parse(document.getElementById("taskData").value);
+      const checklist = JSON.parse(document.getElementById("checklistData").value);
+
+      // Обновляем объекты в задаче
+      task.objects = selected;
+
+      // Если редактируем задачу, заменяем её в списке; если новая – добавляем
+      let index = checklist.tasks.findIndex(t => t.location === task.location);
+      if (index !== -1) {
+        checklist.tasks[index] = task;
+      } else {
+        checklist.tasks.push(task);
+      }
+
+      // Сохраняем обновлённый чеклист через fetch, чтобы обновить cookie
+      try {
+        const saveResp = await fetch('/save_unsaved_checklist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checklist: checklist })
+        });
+        if (!saveResp.ok) {
+          console.error('Ошибка при сохранении временного чеклиста');
+          return;
+        }
+      } catch (error) {
+        console.error('Ошибка при сохранении временного чеклиста', error);
+        return;
+      }
+
+      // После успешного сохранения выполняем редирект на страницу создания чеклиста
+      window.location.href = `/create_checklist?checklist_id=${checklist.checklist_id}`;
     }
   </script>
 {% endblock %}

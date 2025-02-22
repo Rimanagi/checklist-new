@@ -17,11 +17,16 @@ class Task(BaseModel):
 
 
 class Checklist(BaseModel):
-    checklist_id: str | None = None
+    checklist_id: Optional[str] = None
     username: str | None = None
-    tasks: list[Optional[Task]] = list()
+    tasks: list[Optional[Task]] = []
     one_time_password: str = Field(default_factory=lambda: ''.join(random.choices(string.digits, k=8)))
-    created_at: datetime = Field(default_factory=lambda: datetime.now())
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
     def add_item(self, task: Task | None = None):
         self.tasks.append(task)
+
+
+class SelectObjectsPayload(BaseModel):
+    task: Task
+    checklist: Checklist

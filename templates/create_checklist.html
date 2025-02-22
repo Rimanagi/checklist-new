@@ -18,13 +18,13 @@
             {% endfor %}
         </ul>
         <div style="margin-top: 10px;">
-            <a href="/edit_location/{{ loop.index0 }}" class="preserve-user"
-               style="padding: 8px 12px; background-color: #007bff; color: white; border: none; border-radius: 8px; text-decoration: none; margin-right: 5px;">
-                Редактировать
-            </a>
-            <a href="/delete_location/{{ loop.index0 }}" class="preserve-user"
-               style="padding: 8px 12px; background-color: #dc3545; color: white; border: none; border-radius: 8px; text-decoration: none;">
+            <a href="/delete_task/{{ loop.index0 }}" class="preserve-user"
+               style="padding: 8px 12px; background-color: #dc3545; color: white; border: none; border-radius: 8px; text-decoration: none; margin-right: 5px;">
                 Удалить
+            </a>
+            <a href="/select_objects/edit/{{ loop.index0 }}" class="preserve-user"
+               style="padding: 8px 12px; background-color: #007bff; color: white; border: none; border-radius: 8px; text-decoration: none;">
+                Редактировать
             </a>
         </div>
     </div>
@@ -36,20 +36,18 @@
 
 <div class="checklist-actions"
      style="background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 10px;">
-    <!-- Кнопка "Добавить локацию" -->
-    <form method="post" action="/select_location">
-        <!-- Передаём чеклист как JSON в скрытом поле -->
-        <input type="hidden" name="checklist_obj" value='{{ checklist.json() | safe }}'>
+    <!-- Форма для добавления локации -->
+    <form id="addLocationForm">
+        <input type="hidden" id="checklist" value='{{ checklist.json() | safe }}'>
         <button type="submit"
                 style="padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 8px;">
             Добавить локацию
         </button>
     </form>
 
-    <!-- Форма для сохранения чеклиста -->
+    <!-- Форма для сохранения чеклиста (выбор пользователя) -->
     <form method="post" action="/save_checklist" style="display: flex; align-items: center; gap: 10px;">
-        <!-- Передаём чеклист как JSON в скрытом поле -->
-        <input type="hidden" name="checklist_obj" value='{{ checklist.json() | safe }}'>
+        <input type="hidden" name="checklist" value='{{ checklist.json() | safe }}'>
         <label for="selected_user"
                style="padding: 8px 12px; background-color: #f68b20; color: #ffffff; border-radius: 8px;">
             <strong>Выберите пользователя:</strong>
@@ -72,17 +70,35 @@
 </div>
 
 <script>
-    // При изменении выбранного пользователя сохраняем значение в localStorage
+    // При выборе пользователя обновляем скрытое поле с чеклистом
     const selectedUserSelect = document.getElementById("selected_user");
     selectedUserSelect.addEventListener('change', function () {
-        localStorage.setItem("selected_user", this.value);
+        const checklistInput = document.getElementById("checklist");
+        let checklist = JSON.parse(checklistInput.value);
+        checklist.username = this.value;
+        checklistInput.value = JSON.stringify(checklist);
     });
 
-    // При загрузке страницы восстанавливаем выбранного пользователя из localStorage
-    window.addEventListener('load', function () {
-        const storedUser = localStorage.getItem("selected_user");
-        if (storedUser) {
-            selectedUserSelect.value = storedUser;
+    // Отправка формы "Добавить локацию" через fetch
+    document.getElementById('addLocationForm').addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const checklistData = document.getElementById('checklist').value;
+        try {
+            const response = await fetch('/select_location', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: checklistData
+            });
+            if (response.ok) {
+                const html = await response.text();
+                document.open();
+                document.write(html);
+                document.close();
+            } else {
+                console.error('Ошибка при отправке запроса:', response.statusText);
+            }
+        } catch (error) {
+            console.error('Ошибка:', error);
         }
     });
 </script>
