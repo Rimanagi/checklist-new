@@ -5,12 +5,13 @@ import urllib.parse
 
 from bson import ObjectId
 from fastapi import APIRouter, Request, Form, Body, HTTPException  # , status, Depends
-from fastapi.params import Query
+from fastapi.params import Query, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 from app.connected_servers import connected_servers
 from app.schemas import Checklist, Task, SelectObjectsPayload
 from app.templates import templates
+# from app.utils.auth_checker import get_current_user
 from database import locations_collection, checklists_collection, users_collection, passwords_collection
 
 # from app.config import (SECRET_KEY, ALGORITHM, ADMIN_USERNAME)
@@ -41,7 +42,6 @@ async def create_checklist_page(
         request: Request,
         data: str = None,
         checklist_id: Optional[str] = Query(None),
-        selected_user: str = None
 ):
     # Если передан параметр data, пытаемся его распарсить
     tasks_override = None

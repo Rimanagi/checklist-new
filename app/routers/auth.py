@@ -3,6 +3,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.config import ADMIN_USERNAME, ADMIN_PASSWORD
+from app.utils.auth_checker import active_sessions
+# from app.main import active_sessions
 from app.utils.jwt_helper import create_access_token
 from app.templates import templates
 
@@ -33,6 +35,9 @@ def post_login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(
     print(f'{form_data.username=}, {access_token=}')
     response = RedirectResponse(url="/", status_code=302)
     response.set_cookie(key="access_token", value=access_token, httponly=True)
+
+    active_sessions.add(access_token)
+
     return response
 
 
